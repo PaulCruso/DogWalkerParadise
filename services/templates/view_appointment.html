@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Appointment - Dog Walker's Paradise</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+</head>
+<body>
+    <div id="view-appointment-root"></div>
+
+    <script>
+        window.APPOINTMENT_DATA = {{ appointment_data|safe }};
+        window.IS_WALKER = {{ is_walker|safe }};
+    </script>
+
+    <script type="text/babel">
+        const currentUser = "{{ request.user.username }}";
+        const { useState, useEffect, useRef } = React;
+
+        {% verbatim %}
+        function Notification({ notifications }) {
+            const navigateToAppointment = async (appointmentId) => {
+                try {
+                    await fetch(`/api/notifications/${appointmentId}/mark_read/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        }
+                    });
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                } catch (error) {
+                    console.error('Error marking notification as read:', error);
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                }
+            };
+        
+            const getCookie = (name) => {
+                if (!document.cookie) return null;
+                const cookies = document.cookie.split(';');
+                const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+            };
+        
+            return (
+                <div className="notification-dropdown">
+                    <button className="notification-button">
+                        🔔 Notifications ({notifications.length})
+                    </button>
+                    <div className="notification-content">
+                        {notifications.length === 0 ? (
+                            <p>No new notifications</p>
+                        ) : (
+                            notifications.map((note, index) => (
+                                <div
+                                    key={index}
+                                    className="notification-item"
+                                    onClick={() => navigateToAppointment(note.appointment_id)}
+                                    style={{ cursor: "pointer" }}
+                                >
+                                    <p>{note.message}</p>
+                                    <small>{new Date(note.timestamp).toLocaleString()}</small>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Updated Header Component
+        function Header({ notifications }) {
+            return (
+                <header className="header">
+                    <h1>Dog Walker's Paradise</h1>
+                    <nav className="nav">
+                        <div className="nav-buttons-group">
+                            <span className="user-welcome">Welcome, {currentUser}!</span>
+                            <a href="/main" className="logout-button">Back to Home</a>
+                            <a href="/logout" className="logout-button">LOG OUT ➔</a>
+                        </div>
+                        <div className="nav-buttons-group">
+                            <button className="nav-button" onClick={() => window.location.href='/profile'}>
+                                YOUR PROFILE
+                            </button>
+                            <button className="nav-button" onClick={() => window.location.href='/existing_appointment'}>
+                                VIEW EXISTING APPOINTMENTS
+                            </button>
+                            <Notification notifications={notifications} />
+                        </div>
+                    </nav>
+                </header>
+            );
+        }
+
+        function Chat({ appointmentId }) {
+            const [messages, setMessages] = useState([]);
+            const [newMessage, setNewMessage] = useState('');
+            const [socket, setSocket] = useState(null);
+            const messagesEndRef = useRef(null);
+
+            const scrollToBottom = () => {
+                if (messagesEndRef.current) {
+                    messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+                }
+            };
+
+            useEffect(() => {
+                const ws = new WebSocket(`ws://${window.location.host}/ws/chat/${appointmentId}/`);
+                
+                ws.onopen = () => {
+                    console.log('Connected to chat');
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'history') {
+                        setMessages(data.messages);
+                    } else if (data.type === 'message') {
+                        setMessages(function(prev) { return [...prev, data]; });
+                    }
+                    scrollToBottom();
+                };
+
+                ws.onclose = () => {
+                    console.log('Disconnected from chat');
+                };
+
+                setSocket(ws);
+
+                return function cleanup() {
+                    ws.close();
+                };
+            }, [appointmentId]);
+
+            const handleSend = (e) => {
+                e.preventDefault();
+                if (newMessage.trim() && socket) {
+                    socket.send(JSON.stringify({
+                        message: newMessage.trim()
+                    }));
+                    setNewMessage('');
+                }
+            };
+
+            return (
+                <div className="chat-section">
+                    <h3 className="chat-title">Chat</h3>
+                    <div className="chat-messages">
+                        {messages.map(function(msg, index) {
+                            return (
+                                <div 
+                                    key={index} 
+                                    className={"message " + (msg.username === currentUser ? 'sent' : 'received')}
+                                >
+                                    <div className="message-header">
+                                        <span className="message-username">{msg.username}</span>
+                                        <span className="message-time">
+                                            {new Date(msg.timestamp).toLocaleTimeString()}
+                                        </span>
+                                    </div>
+                                    <div className="message-content">{msg.message}</div>
+                                </div>
+                            );
+                        })}
+                        <div ref={messagesEndRef} />
+                    </div>
+                    <form onSubmit={handleSend} className="chat-input-form">
+                        <input
+                            type="text"
+                            value={newMessage}
+                            onChange={function(e) { setNewMessage(e.target.value); }}
+                            placeholder="Type a message..."
+                            className="chat-input"
+                        />
+                        <button type="submit" className="chat-send-button">
+                            Send
+                        </button>
+                    </form>
+                </div>
+            );
+        }
+
+        function AppointmentDetails({ appointment, isWalker, onStart, onFinish }) {
+            const renderActionButton = () => {
+                if (!isWalker) return null;
+                
+                if (appointment.status === 'Inprogress') {
+                    return (
+                        <button 
+                            className="action-button start-button" 
+                            onClick={onStart}
+                        >
+                            Start Walk
+                        </button>
+                    );
+                } else if (appointment.status === 'Started') {
+                    return (
+                        <button 
+                            className="action-button finish-button" 
+                            onClick={onFinish}
+                        >
+                            Finish Walk
+                        </button>
+                    );
+                }
+                return null;
+            };
+        
+            const renderUserLink = (username) => {
+                if (!username) return 'Not assigned';
+                return (
+                    <a 
+                        href={"/other_profile/" + username + "/"}
+                        className="user-profile-link"
+                    >
+                        {username}
+                    </a>
+                );
+            };
+        
+            return (
+                <div className="appointment-details-card">
+                    <h1 className="details-title">Appointment Details</h1>
+                    {[
+                        { label: 'Status', value: appointment.status },
+                        { label: 'Date', value: appointment.date },
+                        { label: 'Time', value: appointment.time },
+                        { label: 'Duration', value: appointment.duration + " min" },
+                        { label: 'Location', value: appointment.location },
+                        { label: 'Dog Type', value: appointment.dog_type },
+                        { label: 'Dog Size', value: appointment.dog_size },
+                        { label: 'Dog Age', value: appointment.dog_age },
+                        { label: 'Number of Dogs', value: appointment.dog_number },
+                        { label: 'Special Requirements', value: appointment.special_requirement || 'None' },
+                        { 
+                            label: 'Owner', 
+                            value: renderUserLink(appointment.dog_owner_username),
+                            isComponent: true 
+                        },
+                        { 
+                            label: 'Walker', 
+                            value: renderUserLink(appointment.dog_walker_username),
+                            isComponent: true 
+                        }
+                    ].map(function(item) {
+                        return (
+                            <div key={item.label} className="details-row">
+                                <span className="details-label">{item.label}:</span>
+                                {item.isComponent ? (
+                                    <span className="details-value">{item.value}</span>
+                                ) : (
+                                    <span className="details-value">{item.value}</span>
+                                )}
+                            </div>
+                        );
+                    })}
+                    {renderActionButton()}
+                </div>
+            );
+        }
+
+        function ViewAppointment() {
+            const [appointment, setAppointment] = useState(window.APPOINTMENT_DATA);
+            const [notifications, setNotifications] = useState([]);
+            const isWalker = window.IS_WALKER;
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+            useEffect(() => {
+                // Fetch notifications
+                const fetchNotifications = async () => {
+                    try {
+                        const response = await fetch('/api/notifications/');
+                        const data = await response.json();
+                        setNotifications(data);
+                    } catch (error) {
+                        console.error('Error fetching notifications:', error);
+                    }
+                };
+
+                fetchNotifications();
+
+                // WebSocket connection for real-time notifications
+                const ws = new WebSocket(`ws://${window.location.host}/ws/notifications/`);
+                ws.onmessage = (event) => {
+                    const newNotification = JSON.parse(event.data);
+                    setNotifications((prev) => [newNotification, ...prev]);
+                };
+
+                return () => ws.close();
+            }, []);
+        
+            const handleAction = async (action) => {
+                try {
+                    const response = await fetch('/view_appointment/' + appointment.id + '/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-CSRFToken': csrfToken,
+                        },
+                        body: 'action=' + action,
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        setAppointment({
+                            ...appointment,
+                            status: data.status,
+                        });
+                    } else {
+                        alert(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred while processing your request.');
+                }
+            };
+        
+            return (
+                <div className="view-appointment-container">
+                    <Header notifications={notifications} />
+                    <main className="main-v-content">
+                        <div className="left-section">
+                            <AppointmentDetails 
+                                appointment={appointment}
+                                isWalker={isWalker}
+                                onStart={() => handleAction('start')}
+                                onFinish={() => handleAction('finish')}
+                            />
+                        </div>
+                        <div className="right-section">
+                            <Chat appointmentId={appointment.id} />
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+        {% endverbatim %}
+
+        ReactDOM.render(
+            <ViewAppointment />,
+            document.getElementById('view-appointment-root')
+        );
+    </script>
+</body>
+</html>

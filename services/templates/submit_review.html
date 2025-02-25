@@ -1,0 +1,71 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Submit Review</title>
+    <link rel="stylesheet" href="{% static 'css/submit_review.css' %}">
+    <style>
+        #{{ form.rating.id_for_label }} {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Submit Review</h1>
+    <form method="post">
+        {% csrf_token %}
+        <div style="display: none;">
+            {{ form.as_p }}
+        </div>
+
+        <p>
+            <label>Rating:</label>
+            <div class="star-rating">
+                <input type="radio" id="star5" name="star_rating" value="5">
+                <label for="star5" title="5 stars"></label>
+                
+                <input type="radio" id="star4" name="star_rating" value="4">
+                <label for="star4" title="4 stars"></label>
+                
+                <input type="radio" id="star3" name="star_rating" value="3">
+                <label for="star3" title="3 stars"></label>
+                
+                <input type="radio" id="star2" name="star_rating" value="2">
+                <label for="star2" title="2 stars"></label>
+                
+                <input type="radio" id="star1" name="star_rating" value="1">
+                <label for="star1" title="1 star"></label>
+            </div>
+            {% if form.rating.errors %}
+            <ul class="errorlist">
+                {% for error in form.rating.errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </p>
+        <div class="rating-value">Selected Rating: <span id="selected-rating">0</span></div>
+        <button type="submit">Submit</button>
+    </form>
+
+    <script>
+        const originalInput = document.getElementById('{{ form.rating.id_for_label }}');
+        const starInputs = document.querySelectorAll('input[name="star_rating"]');
+        const selectedRating = document.getElementById('selected-rating');
+
+        if (originalInput.value) {
+            const initialRating = originalInput.value;
+            document.querySelector(`input[name="star_rating"][value="${initialRating}"]`).checked = true;
+            selectedRating.textContent = initialRating;
+        }
+
+        starInputs.forEach(input => {
+            input.addEventListener('change', (e) => {
+                const value = e.target.value;
+                originalInput.value = value; 
+                selectedRating.textContent = value;
+            });
+        });
+    </script>
+</body>
+</html>

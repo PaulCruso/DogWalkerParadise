@@ -1,0 +1,171 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Main - Dog Walker Paradise</title>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <!-- Root div for React -->
+    <div id="root"></div>
+
+    <!-- React Application Script -->
+    <script type="text/babel">
+        const currentUser = "{{ request.user.username }}";
+        
+        {% verbatim %}
+        function Notification({ notifications }) {
+            const navigateToAppointment = async (appointmentId) => {
+                try {
+                    await fetch(`/api/notifications/${appointmentId}/mark_read/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        }
+                    });
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                } catch (error) {
+                    console.error('Error marking notification as read:', error);
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                }
+            };
+        
+            const getCookie = (name) => {
+                if (!document.cookie) return null;
+                const cookies = document.cookie.split(';');
+                const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+            };
+        
+            return (
+                <div className="notification-dropdown">
+                    <button className="notification-button">
+                        🔔 Notifications ({notifications.length})
+                    </button>
+                    <div className="notification-content">
+                        {notifications.length === 0 ? (
+                            <p>No new notifications</p>
+                        ) : (
+                            notifications.map((note, index) => (
+                                <div
+                                    key={index}
+                                    className="notification-item"
+                                    onClick={() => navigateToAppointment(note.appointment_id)}
+                                    style={{ cursor: "pointer" }}
+                                >
+                                    <p>{note.message}</p>
+                                    <small>{new Date(note.timestamp).toLocaleString()}</small>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Header Component
+        const Header = ({ notifications }) => {
+            const navigateTo = (url) => {
+                window.location.href = url;
+            };
+
+            return (
+                <header className="header">
+                    <h1>Dog Walker's Paradise</h1>
+                    <nav className="nav">
+                        <div className="nav-buttons-group">
+                            <span className="user-welcome">Welcome, {currentUser}!</span>
+                            <a href="/main" className="logout-button">Back to Home</a>
+                            <a href="/logout" className="logout-button">LOG OUT ➔</a>
+                        </div>
+                        <div className="nav-buttons-group">
+                            <button className="nav-button" onClick={() => navigateTo('/profile')}>
+                                YOUR PROFILE
+                            </button>
+                            <button className="nav-button" onClick={() => navigateTo('/existing_appointment')}>
+                                VIEW EXISTING APPOINTMENTS
+                            </button>
+                            <Notification notifications={notifications} />
+                        </div>
+                    </nav>
+                </header>
+            );
+        };
+
+        // Main Content Component
+        const MainContent = () => {
+            const navigateTo = (url) => {
+                window.location.href = url;
+            };
+
+            return (
+                <main className="main-content">
+                    <div className="intro-section">
+                        <img src="/static/images/dog_left.svg" alt="Sitting dog" className="dog-icon" />
+                        <div className="intro-text">
+                            <p>Busy afternoon?</p>
+                            <p>We can take them for a walk or you can walk others' dog!</p>
+                        </div>
+                        <img src="/static/images/dog_right.svg" alt="Standing dog" className="dog-icon" />
+                    </div>
+                    
+                    <div className="button-section">
+                        <button className="main-button" onClick={() => navigateTo('/book_appointment')}>
+                            Book appointment
+                        </button>
+                        <button className="main-button" onClick={() => navigateTo('/help_walk')}>
+                            Help walk
+                        </button>
+                    </div>
+                </main>
+            );
+        };
+
+        // Main App Component
+        const App = () => {
+            const [notifications, setNotifications] = React.useState([]);
+
+            React.useEffect(() => {
+                const fetchNotifications = async () => {
+                    try {
+                        const response = await fetch('/api/notifications/');
+                        const data = await response.json();
+                        setNotifications(data);
+                    } catch (error) {
+                        console.error('Error fetching notifications:', error);
+                    }
+                };
+
+                // Fetch notifications on load
+                fetchNotifications();
+
+                // Optional: WebSocket for real-time notifications
+                const ws = new WebSocket(`ws://${window.location.host}/ws/notifications/`);
+                ws.onmessage = (event) => {
+                    const newNotification = JSON.parse(event.data);
+                    setNotifications((prev) => [newNotification, ...prev]);
+                };
+
+                return () => ws.close();
+            }, []);
+
+            return (
+                <div>
+                    <Header notifications={notifications} />
+                    <MainContent />
+                </div>
+            );
+        };
+        {% endverbatim %}
+
+        // Render the App component into the root div
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

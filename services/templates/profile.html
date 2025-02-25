@@ -1,0 +1,329 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog Walker's Paradise - Profile</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    {% csrf_token %}
+    <script>
+        window.userProfile = {
+            avatarUrl: "{% if user_profile.avatar %}{{ user_profile.avatar.url }}{% else %}{% static 'images/default_profile_picture.jpg' %}{% endif %}",
+            about: "{{ user_profile.about|escapejs|default:'' }}",
+            username: "{{ request.user.username|escapejs }}",
+            joinYear: "{{ request.user.date_joined|date:'Y' }}",
+            averageRating: "{{ user_profile.average_rating|floatformat:1 }}",  
+            ratingCount: "{{ user_profile.rating_count }}"  
+        };
+        window.csrfToken = '{{ csrf_token }}';
+    </script>
+    {{ comments|json_script:"comments-data" }}
+</head>
+<body>
+    <div id="profile-root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const currentUser = "{{ request.user.username }}";
+
+        {% verbatim %}
+        function Notification({ notifications }) {
+            const navigateToAppointment = async (appointmentId) => {
+                try {
+                    await fetch(`/api/notifications/${appointmentId}/mark_read/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        }
+                    });
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                } catch (error) {
+                    console.error('Error marking notification as read:', error);
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                }
+            };
+        
+            const getCookie = (name) => {
+                if (!document.cookie) return null;
+                const cookies = document.cookie.split(';');
+                const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+            };
+        
+            return (
+                <div className="notification-dropdown">
+                    <button className="notification-button">
+                        🔔 Notifications ({notifications.length})
+                    </button>
+                    <div className="notification-content">
+                        {notifications.length === 0 ? (
+                            <p>No new notifications</p>
+                        ) : (
+                            notifications.map((note, index) => (
+                                <div
+                                    key={index}
+                                    className="notification-item"
+                                    onClick={() => navigateToAppointment(note.appointment_id)}
+                                    style={{ cursor: "pointer" }}
+                                >
+                                    <p>{note.message}</p>
+                                    <small>{new Date(note.timestamp).toLocaleString()}</small>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        }
+        // Header Component with Notifications
+        function Header({ notifications }) {
+            const navigateTo = (url) => {
+                window.location.href = url;
+            };
+
+            return (
+                <header className="header">
+                    <h1>Dog Walker's Paradise</h1>
+                    <nav className="nav">
+                        <div className="nav-buttons-group">
+                            <span className="user-welcome">Welcome, {currentUser}!</span>
+                            <a href="/main" className="logout-button">Back to Home</a>
+                            <a href="/logout" className="logout-button">LOG OUT ➔</a>
+                        </div>
+                        <div className="nav-buttons-group">
+                            <button className="nav-button" onClick={() => navigateTo('/profile')}>
+                                YOUR PROFILE
+                            </button>
+                            <button className="nav-button" onClick={() => navigateTo('/existing_appointment')}>
+                                VIEW EXISTING APPOINTMENTS
+                            </button>
+                            <Notification notifications={notifications} />
+                        </div>
+                    </nav>
+                </header>
+            );
+        }
+
+        function ProfileContent() {
+            // Get data from the window object
+            const [avatar, setAvatar] = useState(window.userProfile.avatarUrl);
+            const [about, setAbout] = useState(window.userProfile.about);
+            const [comments, setComments] = useState(JSON.parse(document.getElementById('comments-data').textContent));
+            const [commentText, setCommentText] = useState('');
+            
+            // Create a reference for the file input
+            const fileInputRef = React.useRef(null);
+        
+            const handleAvatarChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    // Preview new avatar instantly
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setAvatar(reader.result);
+                    };
+                    reader.readAsDataURL(file);
+        
+                    // Upload new avatar
+                    handleAvatarUpload(file);
+                }
+            };
+        
+            const handleAvatarUpload = (file) => {
+                const formData = new FormData();
+                formData.append('avatar', file);
+        
+                fetch('/profile/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': window.csrfToken,
+                    },
+                    body: formData,
+                    credentials: 'include',
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setAvatar(data.avatar_url);
+                    } else {
+                        alert('Avatar upload failed');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error uploading avatar:', error);
+                    alert('Error occurred while uploading avatar');
+                });
+            };
+        
+            // Function to trigger file input click
+            const triggerFileInput = () => {
+                fileInputRef.current.click();
+            };
+        
+            // Update About section
+            const handleAboutSubmit = () => {
+                fetch('/profile/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': window.csrfToken,
+                    },
+                    body: new URLSearchParams({
+                        'about': about,
+                    }),
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('Successfully updated your About section');
+                    }
+                });
+            };
+        
+            // Submit a comment
+            const handleCommentSubmit = () => {
+                fetch('/profile/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': window.csrfToken,
+                    },
+                    body: new URLSearchParams({
+                        'content': commentText,
+                    }),
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setComments([data.comment, ...comments]);
+                        setCommentText('');
+                    }
+                });
+            };
+        
+            const formatDate = (timestamp) => {
+                const date = new Date(timestamp);
+                return date.toLocaleDateString();
+            };
+
+            return (
+        <main className="profile-content">
+            <div className="profile-left">
+                <div className="profile-header">
+                    <div className="avatar-container">
+                        <img src={avatar} alt="Profile Picture" className="profile-picture" />
+                        <button 
+                            onClick={triggerFileInput}
+                            className="upload-button"
+                        >
+                            Change Profile Picture
+                        </button>
+                        <input 
+                            type="file"
+                            ref={fileInputRef}
+                            accept="image/*"
+                            onChange={handleAvatarChange}
+                            style={{ display: 'none' }}
+                        />
+                    </div>
+                    <div className="user-info">
+                        <h2>{window.userProfile.username}</h2>
+                        <p>Joined in {window.userProfile.joinYear}</p>
+                    </div>
+                        </div>
+                        <section className="about-section">
+                            <h3>About</h3>
+                            <textarea
+                                value={about}
+                                onChange={(e) => setAbout(e.target.value)}
+                                className="about-input"
+                                rows={10}
+                            ></textarea>
+                            <button onClick={handleAboutSubmit}>Update About</button>
+                        </section>
+                    </div>
+
+                    <div className="profile-right">
+                        <section className="reviews-section">
+                            <h3>Reviews</h3>
+                            {comments.map((comment, index) => (
+                                <div className="review" key={index} style={{ display: "flex", alignItems: "center" }}>
+                                    <div className="review-author">
+                                        <a
+                                            href={`/other_profile/${comment.user__username}`}
+                                            className="author-name"
+                                        >
+                                            {comment.user__username}{" "}
+                                        </a>
+                                    </div>
+                                    <p style={{ margin: "0 10px 0 0", fontSize: "16px" }}>
+                                        {comment.content}
+                                    </p>
+                                    <small className="review-timestamp" style={{ color: "#666" }}>
+                                        {formatDate(comment.timestamp)}
+                                    </small>
+                                </div>
+                            ))}
+                        </section>
+
+                        <section className="submit-review-section">
+                            <h3>Submit Your Review</h3>
+                            <textarea
+                                placeholder="Write your review here..."
+                                className="review-input"
+                                value={commentText}
+                                onChange={(e) => setCommentText(e.target.value)}
+                            ></textarea>
+                            <button className="submit-button" onClick={handleCommentSubmit}>Submit</button>
+                        </section>
+                    </div>
+                </main>
+            );
+        }
+
+
+        function ProfilePage() {
+            const [notifications, setNotifications] = useState([]);
+
+            useEffect(() => {
+                // Fetch notifications
+                const fetchNotifications = async () => {
+                    try {
+                        const response = await fetch('/api/notifications/');
+                        const data = await response.json();
+                        setNotifications(data);
+                    } catch (error) {
+                        console.error('Error fetching notifications:', error);
+                    }
+                };
+
+                fetchNotifications();
+
+                // WebSocket connection for real-time notifications
+                const ws = new WebSocket(`ws://${window.location.host}/ws/notifications/`);
+                ws.onmessage = (event) => {
+                    const newNotification = JSON.parse(event.data);
+                    setNotifications((prev) => [newNotification, ...prev]);
+                };
+
+                return () => ws.close();
+            }, []);
+
+            return (
+                <div>
+                    <Header notifications={notifications} />
+                    <ProfileContent />
+                </div>
+            );
+        }
+        {% endverbatim %}
+
+        ReactDOM.render(<ProfilePage />, document.getElementById('profile-root'));
+    </script>
+</body>
+</html>

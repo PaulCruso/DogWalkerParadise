@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Appointments - Dog Walker's Paradise</title>
+    {% load static %}
+    {% csrf_token %}
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+</head>
+<body>
+    <div id="existing-appointment-root"></div>
+
+    <script type="text/babel">
+        const currentUser = "{{ request.user.username }}";
+
+        {% verbatim %}
+        function Notification({ notifications }) {
+            const navigateToAppointment = async (appointmentId) => {
+                try {
+                    await fetch(`/api/notifications/${appointmentId}/mark_read/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        }
+                    });
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                } catch (error) {
+                    console.error('Error marking notification as read:', error);
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                }
+            };
+        
+            const getCookie = (name) => {
+                if (!document.cookie) return null;
+                const cookies = document.cookie.split(';');
+                const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+            };
+        
+            return (
+                <div className="notification-dropdown">
+                    <button className="notification-button">
+                        🔔 Notifications ({notifications.length})
+                    </button>
+                    <div className="notification-content">
+                        {notifications.length === 0 ? (
+                            <p>No new notifications</p>
+                        ) : (
+                            notifications.map((note, index) => (
+                                <div
+                                    key={index}
+                                    className="notification-item"
+                                    onClick={() => navigateToAppointment(note.appointment_id)}
+                                    style={{ cursor: "pointer" }}
+                                >
+                                    <p>{note.message}</p>
+                                    <small>{new Date(note.timestamp).toLocaleString()}</small>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Header Component
+        const Header = ({ notifications }) => {
+            const navigateTo = (url) => {
+                window.location.href = url;
+            };
+
+            return (
+                <header className="header">
+                    <h1>Dog Walker's Paradise</h1>
+                    <nav className="nav">
+                        <div className="nav-buttons-group">
+                            <span className="user-welcome">Welcome, {currentUser}!</span>
+                            <a href="/main" className="logout-button">Back to Home</a>
+                            <a href="/logout" className="logout-button">LOG OUT ➔</a>
+                        </div>
+                        <div className="nav-buttons-group">
+                            <button className="nav-button" onClick={() => navigateTo('/profile')}>
+                                YOUR PROFILE
+                            </button>
+                            <button className="nav-button" onClick={() => navigateTo('/existing_appointment')}>
+                                VIEW EXISTING APPOINTMENTS
+                            </button>
+                            <Notification notifications={notifications} />
+                        </div>
+                    </nav>
+                </header>
+            );
+        }
+
+        function AppointmentCard({ appointment, onCancelAppointment }) {
+            const isOwner = currentUser === appointment.dog_owner_username;
+            const isWalker = currentUser === appointment.dog_walker_username;
+
+            const formatDate = (dateString) => {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+            };
+
+            const formatTime = (dateString, duration) => {
+                const startDate = new Date(dateString);
+                const endDate = new Date(startDate.getTime() + parseInt(duration) * 60000);
+                
+                const formatTimeString = (date) => {
+                    return date.toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+                };
+
+                return `${formatTimeString(startDate)} ~ ${formatTimeString(endDate)}`;
+            };
+
+            const getStatusClass = (status) => {
+                const statusClasses = {
+                    'Scheduled': 'status-scheduled',
+                    'Inprogress': 'status-inprogress',
+                    'Started': 'status-started' , 
+                    'Completed': 'status-completed',
+                    'Cancelled': 'status-cancelled'
+                };
+                return statusClasses[status] || '';
+            };
+
+            return (
+                <div className={`appointment-card ${getStatusClass(appointment.status)}`}>
+                    <div className="appointment-info">
+                        <div className="info-row">
+                            <span className={`status-badge status-${appointment.status}`}>
+                                {appointment.status}
+                            </span>
+                        </div>
+
+                        <div className="info-row">
+                            <span className="info-label">Date:</span>
+                            <span className="info-value">{formatDate(appointment.appointment_date)}</span>
+                            <span className="info-label">Time:</span>
+                            <span className="info-value">{formatTime(appointment.appointment_date, appointment.duration)}</span>
+                        </div>
+
+                        <div className="info-row">
+                            <span className="info-label">Location:</span>
+                            <span className="info-value">{appointment.location}</span>
+                        </div>
+
+                        <div className="info-row">
+                            <span className="info-label">Dog Owner:</span>
+                            {isOwner ? (
+                                <span className="info-value">You</span>
+                            ) : (
+                                <a href={`/other_profile/${appointment.dog_owner_username}`} className="user-link">
+                                    {appointment.dog_owner_username || 'Not Assigned'}
+                                </a>
+                            )}
+                        </div>
+
+                        <div className="info-row">
+                            <span className="info-label">Dog Walker:</span>
+                            {isWalker ? (
+                                <span className="info-value">You</span>
+                            ) : (
+                                appointment.dog_walker_username ? (
+                                    <a href={`/other_profile/${appointment.dog_walker_username}`} className="user-link">
+                                        {appointment.dog_walker_username}
+                                    </a>
+                                ) : (
+                                    <span className="info-value">Not Assigned</span>
+                                )
+                            )}
+                        </div>
+
+                        <div className="dog-info">
+                            <span className="tag">Type: {appointment.dog_type}</span>
+                            <span className="tag">Size: {appointment.dog_size}</span>
+                            <span className="tag">Age: {appointment.dog_age}</span>
+                            <span className="tag">Number of Dogs: {appointment.dog_number}</span>
+                        </div>
+
+                        {appointment.special_requirement && (
+                            <div className="special-requirements">
+                                <div className="special-requirements-label">Special Requirements:</div>
+                                <p className="special-requirements-text">{appointment.special_requirement}</p>
+                            </div>
+                        )}
+
+                        <div className="appointment-actions">
+                            <button
+                                className="view-button"
+                                onClick={() => window.location.href = `/view_appointment/${appointment.id}`}
+                            >
+                                👁️
+                            </button>
+                            {(appointment.status === 'Scheduled' || appointment.status === 'Inprogress') && (
+                                <button 
+                                    className="cancel-button"
+                                    onClick={() => onCancelAppointment(appointment.id, isOwner)}
+                                >
+                                    ✖️
+                                </button>
+                            )}
+                            {appointment.status === 'Completed' && currentUser === appointment.dog_owner_username && (
+                                <button 
+                                    className="submit-review-button" 
+                                    onClick={() => window.location.href = `/appointments/${appointment.id}/submit_review/`}>
+                                    📝
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function ExistingAppointment() {
+            const [appointments, setAppointments] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+            const [error, setError] = React.useState(null);
+            const [notifications, setNotifications] = React.useState([]);
+
+            React.useEffect(() => {
+                fetchAppointments();
+                
+                // Fetch notifications
+                const fetchNotifications = async () => {
+                    try {
+                        const response = await fetch('/api/notifications/');
+                        const data = await response.json();
+                        setNotifications(data);
+                    } catch (error) {
+                        console.error('Error fetching notifications:', error);
+                    }
+                };
+
+                fetchNotifications();
+
+                // WebSocket connection for real-time notifications
+                const ws = new WebSocket(`ws://${window.location.host}/ws/notifications/`);
+                ws.onmessage = (event) => {
+                    const newNotification = JSON.parse(event.data);
+                    setNotifications((prev) => [newNotification, ...prev]);
+                };
+
+                return () => ws.close();
+            }, []);
+
+            const fetchAppointments = async () => {
+                try {
+                    const response = await fetch('/api/appointments/', {
+                        credentials: 'include',
+                    });
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch appointments');
+                    }
+                    const data = await response.json();
+                    setAppointments(data);
+                    setLoading(false);
+                } catch (err) {
+                    setError(err.message);
+                    setLoading(false);
+                }
+            };
+
+            const handleCancelAppointment = async (appointmentId, isOwner) => {
+                const action = isOwner ? 'cancel' : 'withdraw from';
+                if (!confirm(`Are you sure you want to ${action} this appointment?`)) {
+                    return;
+                }
+            
+                try {
+                    const response = await fetch(`/api/appointments/${appointmentId}/cancel/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                        },
+                        body: JSON.stringify({ is_owner: isOwner }),
+                        credentials: 'include'
+                    });
+            
+                    if (!response.ok) {
+                        throw new Error('Failed to cancel appointment');
+                    }
+            
+                    await fetchAppointments();
+                    alert(`Appointment ${isOwner ? 'cancelled' : 'withdrawn'} successfully`);
+                } catch (err) {
+                    alert(`Failed to ${isOwner ? 'cancel' : 'withdraw from'} appointment: ` + err.message);
+                }
+            };
+
+            return (
+                <div className="existing-appointment-container">
+                    <Header notifications={notifications} />
+                    <main className="existing-appointment-main">
+                        <h2>View Your Existing Appointments</h2>
+                        {loading ? (
+                            <div className="loading">Loading appointments...</div>
+                        ) : error ? (
+                            <div className="error">Error: {error}</div>
+                        ) : appointments.length === 0 ? (
+                            <div className="no-appointments">No appointments found</div>
+                        ) : (
+                            <div className="appointments-container">
+                                {appointments.map(appointment => (
+                                    <AppointmentCard 
+                                        key={appointment.id} 
+                                        appointment={appointment}
+                                        onCancelAppointment={handleCancelAppointment}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+        {% endverbatim %}
+
+        ReactDOM.render(<ExistingAppointment />, document.getElementById('existing-appointment-root'));
+    </script>
+</body>
+</html>

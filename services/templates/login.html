@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Dog Walker Paradise</title>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <img src="{% static 'images/woman_dog1.webp' %}" alt="Description" class="login-image">
+    
+    <!-- Define JavaScript Variables for URLs and CSRF Token -->
+    <script>
+        const LOGIN_URL = "{% url 'login' %}";
+        const REGISTER_URL = "{% url 'register' %}";
+        const GOOGLE_AUTH_URL = "{% url 'social:begin' 'google-oauth2' %}";
+        const CSRF_TOKEN = "{{ csrf_token }}";
+        const MESSAGES = [
+            {% for message in messages|slice:"-1:" %}
+                {
+                    text: "{{ message }}",
+                    tags: "{{ message.tags }}"
+                }
+            {% endfor %}
+        ];
+    </script>
+
+    <div id="login-root"></div>
+
+    <script type="text/babel">
+        function LoginForm() {
+            return (
+                <div className="container">
+                    <div className="form-container">
+                        <h2>Welcome Back!</h2>
+                        
+                        {MESSAGES.length > 0 && (
+                            <div className="messages">
+                                {MESSAGES.map((msg, index) => (
+                                    <div key={index} className={`message ${msg.tags}`}>
+                                        {msg.text}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        
+                        <a href={GOOGLE_AUTH_URL} className="google-btn">
+                            <img src="{% static 'images/google.png' %}" alt="Google Logo" />
+                            Continue with Google
+                        </a>
+
+                        <div className="or-divider">OR</div>
+
+                        {/* Traditional Login Form */}
+                        <form action={LOGIN_URL} method="POST">
+                            <input type="hidden" name="csrfmiddlewaretoken" value={CSRF_TOKEN} />
+                            
+                            <label>Username:</label>
+                            <input type="text" name="username" required />
+                            
+                            <label>Password:</label>
+                            <input type="password" name="password" required />
+                            
+                            <button type="submit">Login</button>
+                        </form>
+
+                        <p>Don't have an account? <a href={REGISTER_URL}>Register</a></p>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<LoginForm />, document.getElementById('login-root'));
+    </script>
+</body>
+</html>
+

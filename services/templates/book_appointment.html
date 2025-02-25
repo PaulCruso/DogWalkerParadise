@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Appointment - Dog Walker's Paradise</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_PLACES_API_KEY }}&libraries=places"></script>
+</head>
+<body>
+    <div id="appointment-root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const currentUser = "{{ request.user.username }}";
+        const csrfToken = "{{ csrf_token }}";
+
+
+        {% verbatim %}
+        function Notification({ notifications }) {
+            const navigateToAppointment = async (appointmentId) => {
+                try {
+                    await fetch(`/api/notifications/${appointmentId}/mark_read/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        }
+                    });
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                } catch (error) {
+                    console.error('Error marking notification as read:', error);
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                }
+            };
+        
+            const getCookie = (name) => {
+                if (!document.cookie) return null;
+                const cookies = document.cookie.split(';');
+                const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+            };
+        
+            return (
+                <div className="notification-dropdown">
+                    <button className="notification-button">
+                        🔔 Notifications ({notifications.length})
+                    </button>
+                    <div className="notification-content">
+                        {notifications.length === 0 ? (
+                            <p>No new notifications</p>
+                        ) : (
+                            notifications.map((note, index) => (
+                                <div
+                                    key={index}
+                                    className="notification-item"
+                                    onClick={() => navigateToAppointment(note.appointment_id)}
+                                    style={{ cursor: "pointer" }}
+                                >
+                                    <p>{note.message}</p>
+                                    <small>{new Date(note.timestamp).toLocaleString()}</small>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Header Component
+        const Header = ({ notifications }) => {
+            const navigateTo = (url) => {
+                window.location.href = url;
+            };
+
+            return (
+                <header className="header">
+                    <h1>Dog Walker's Paradise</h1>
+                    <nav className="nav">
+                        <div className="nav-buttons-group">
+                            <span className="user-welcome">Welcome, {currentUser}!</span>
+                            <a href="/main" className="logout-button">Back to Home</a>
+                            <a href="/logout" className="logout-button">LOG OUT ➔</a>
+                        </div>
+                        <div className="nav-buttons-group">
+                            <button className="nav-button" onClick={() => navigateTo('/profile')}>
+                                YOUR PROFILE
+                            </button>
+                            <button className="nav-button" onClick={() => navigateTo('/existing_appointment')}>
+                                VIEW EXISTING APPOINTMENTS
+                            </button>
+                            <Notification notifications={notifications} />
+                        </div>
+                    </nav>
+                </header>
+            );
+        };
+
+        function AppointmentForm() {
+            const [notifications, setNotifications] = useState([]);
+            const [dogType, setDogType] = useState("");
+            const [otherDogType, setOtherDogType] = useState("");
+            const [showOtherDogType, setShowOtherDogType] = useState(false);
+            const [dogSize, setDogSize] = useState("");
+            const [dogAge, setDogAge] = useState("");
+            const [dogNumber, setDogNumber] = useState("1");
+            const [customDogNumber, setCustomDogNumber] = useState("");
+            const [specialRequirement, setSpecialRequirement] = useState("");
+            const [duration, setDuration] = useState("");
+            const [selectedDate, setSelectedDate] = useState(null);
+            const [location, setLocation] = useState("");
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                
+                // Create form data
+                const formData = new FormData(e.target);
+                
+                // Send the form data using fetch
+                fetch(e.target.action, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: formData
+                })
+                .then(response => {
+                    if (response.ok) {
+                        window.location.href = '/existing_appointment';
+                    } else {
+                        alert('Error submitting form');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error submitting form');
+                });
+            };
+
+            useEffect(() => {
+                // Initialize Flatpickr
+                flatpickr("#datepicker", {
+                    minDate: "today",
+                    maxDate: new Date().fp_incr(14),
+                    enableTime: true,
+                    dateFormat: "Y-m-d H:i",
+                    onChange: (selectedDates) => setSelectedDate(selectedDates[0]),
+                });
+
+                // Initialize Google Places Autocomplete
+                const autocompleteInput = document.getElementById("autocomplete");
+                const autocomplete = new google.maps.places.Autocomplete(autocompleteInput, {
+                    fields: ["formatted_address"],
+                    componentRestrictions: { country: "us" },
+                });
+
+                autocomplete.addListener("place_changed", () => {
+                    const place = autocomplete.getPlace();
+                    if (place && place.formatted_address) {
+                        setLocation(place.formatted_address);
+                    }
+                });
+
+                // Fetch notifications
+                const fetchNotifications = async () => {
+                    try {
+                        const response = await fetch('/api/notifications/');
+                        const data = await response.json();
+                        setNotifications(data);
+                    } catch (error) {
+                        console.error('Error fetching notifications:', error);
+                    }
+                };
+
+                fetchNotifications();
+
+                // WebSocket connection for real-time notifications
+                const ws = new WebSocket(`ws://${window.location.host}/ws/notifications/`);
+                ws.onmessage = (event) => {
+                    const newNotification = JSON.parse(event.data);
+                    setNotifications((prev) => [newNotification, ...prev]);
+                };
+
+                return () => ws.close();
+            }, []);
+
+            const handleDogTypeChange = (e) => {
+                const value = e.target.value;
+                setDogType(value);
+                setShowOtherDogType(value === "Other");
+            };
+
+            const handleDogNumberChange = (e) => {
+                const value = e.target.value;
+                setDogNumber(value);
+            };
+
+            return (
+                <div className="appointment-container">
+                    <Header notifications={notifications} />
+                    <main className="appointment-main">
+                        <div className="form-section">
+                            <h2>Your Pet Information</h2>
+                                <form onSubmit={handleSubmit} method="post" className="appointment-form">                                
+                                    <div className="dog-info">
+                                        <input type="hidden" name="csrfmiddlewaretoken" value={csrfToken} />
+                                    <label htmlFor="dogType">Dog Type:</label>
+                                    <select id="dogType" name="dog_type" className="dropdown" value={dogType} onChange={handleDogTypeChange}>
+                                        <option value="" disabled>Select dog type</option>
+                                        <option value="French Bulldog">French Bulldog</option>
+                                        <option value="Labrador Retriever">Labrador Retriever</option>
+                                        <option value="Golden Retriever">Golden Retriever</option>
+                                        <option value="German Shepherd Dog">German Shepherd Dog</option>
+                                        <option value="Poodle">Poodle</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                    {showOtherDogType && (
+                                        <input
+                                            type="text"
+                                            id="otherDogType"
+                                            name="other_dog_type"
+                                            placeholder="Please specify"
+                                            value={otherDogType}
+                                            onChange={(e) => setOtherDogType(e.target.value)}
+                                        />
+                                    )}
+
+                                    <label htmlFor="dogSize">Dog Size (lbs):</label>
+                                    <select id="dogSize" name="dog_size" className="dropdown" value={dogSize} onChange={(e) => setDogSize(e.target.value)}>
+                                        <option value="" disabled>Select Size</option>
+                                        <option value="0-15">0-15 lbs</option>
+                                        <option value="16-40">16-40 lbs</option>
+                                        <option value="41-100">41-100 lbs</option>
+                                        <option value="101+">101+ lbs</option>
+                                    </select>
+
+                                    <label htmlFor="dogAge">Dog Age:</label>
+                                    <select id="dogAge" name="dog_age" className="dropdown" value={dogAge} onChange={(e) => setDogAge(e.target.value)}>
+                                        <option value="" disabled>Select Age</option>
+                                        <option value="0-1">0-1 years</option>
+                                        <option value="2-5">2-5 years</option>
+                                        <option value="6-10">6-10 years</option>
+                                        <option value="10+">10+ years</option>
+                                    </select>
+
+                                    <label htmlFor="dogNumber">Dog Number:</label>
+                                    <select id="dogNumber" name="dog_number" className="dropdown" value={dogNumber} onChange={handleDogNumberChange}>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                    {dogNumber === "other" && (
+                                        <input
+                                            type="number"
+                                            id="customDogNumber"
+                                            name="custom_dog_number"
+                                            placeholder="Enter number"
+                                            value={customDogNumber}
+                                            onChange={(e) => setCustomDogNumber(e.target.value)}
+                                            min="1"
+                                        />
+                                    )}
+
+                                    <label htmlFor="specialRequirement">Special Requirement:</label>
+                                    <input
+                                        type="text"
+                                        id="specialRequirement"
+                                        name="special_requirement"
+                                        value={specialRequirement}
+                                        onChange={(e) => setSpecialRequirement(e.target.value)}
+                                    />
+                                </div>
+
+                                {/* Calendar Section Fields Inside the Form */}
+                                <div className="calendar-location-section">
+                                    <h2>Select the Time and Location</h2>
+                                    <label htmlFor="datepicker">Appointment Time:</label>
+                                    <input type="text" id="datepicker" name="appointment_date" placeholder="Select Date" required />
+
+                                    <label htmlFor="duration">Duration:</label>
+                                    <select id="duration" name="duration" className="dropdown" value={duration} onChange={(e) => setDuration(e.target.value)} required>
+                                        <option value="" disabled>Select duration</option>
+                                        <option value="15">15 mins</option>
+                                        <option value="30">30 mins</option>
+                                        <option value="45">45 mins</option>
+                                        <option value="60">1 hour</option>
+                                        <option value="90">1.5 hours</option>
+                                    </select>
+                                    <label htmlFor="autocomplete">Location:</label>
+                                    <input
+                                        id="autocomplete"
+                                        name="location"
+                                        type="text"
+                                        className="location-input"
+                                        placeholder="Enter a location"
+                                        required
+                                    />
+                                    <p>Selected Location: {location}</p>
+                                </div>                    
+                                <button type="submit" className="confirm-button">
+                                    Confirm
+                                </button>
+                            </form>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+        {% endverbatim %}
+
+        ReactDOM.render(<AppointmentForm />, document.getElementById("appointment-root"));
+    </script>
+</body>
+</html>

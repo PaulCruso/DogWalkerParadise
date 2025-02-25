@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Help Walk - Dog Walker's Paradise</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+</head>
+<body>
+    <div id="help-walk-root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const currentUser = "{{ request.user.username }}";
+        const appointments = {{ appointments_json|safe }};
+        const csrfToken = "{{ csrf_token }}";
+
+        {% verbatim %}
+        function Notification({ notifications }) {
+            const navigateToAppointment = async (appointmentId) => {
+                try {
+                    await fetch(`/api/notifications/${appointmentId}/mark_read/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        }
+                    });
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                } catch (error) {
+                    console.error('Error marking notification as read:', error);
+                    window.location.href = `/view_appointment/${appointmentId}/`;
+                }
+            };
+        
+            const getCookie = (name) => {
+                if (!document.cookie) return null;
+                const cookies = document.cookie.split(';');
+                const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+            };
+        
+            return (
+                <div className="notification-dropdown">
+                    <button className="notification-button">
+                        🔔 Notifications ({notifications.length})
+                    </button>
+                    <div className="notification-content">
+                        {notifications.length === 0 ? (
+                            <p>No new notifications</p>
+                        ) : (
+                            notifications.map((note, index) => (
+                                <div
+                                    key={index}
+                                    className="notification-item"
+                                    onClick={() => navigateToAppointment(note.appointment_id)}
+                                    style={{ cursor: "pointer" }}
+                                >
+                                    <p>{note.message}</p>
+                                    <small>{new Date(note.timestamp).toLocaleString()}</small>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Header Component
+        const Header = ({ notifications }) => {
+            const navigateTo = (url) => {
+                window.location.href = url;
+            };
+
+            return (
+                <header className="header">
+                    <h1>Dog Walker's Paradise</h1>
+                    <nav className="nav">
+                        <div className="nav-buttons-group">
+                            <span className="user-welcome">Welcome, {currentUser}!</span>
+                            <a href="/main" className="logout-button">Back to Home</a>
+                            <a href="/logout" className="logout-button">LOG OUT ➔</a>
+                        </div>
+                        <div className="nav-buttons-group">
+                            <button className="nav-button" onClick={() => navigateTo('/profile')}>
+                                YOUR PROFILE
+                            </button>
+                            <button className="nav-button" onClick={() => navigateTo('/existing_appointment')}>
+                                VIEW EXISTING APPOINTMENTS
+                            </button>
+                            <Notification notifications={notifications} />
+                        </div>
+                    </nav>
+                </header>
+            );
+        }
+
+        function HelpWalk() {
+            const itemsPerPage = 5; // Show 5 appointments per page
+
+            const [currentPage, setCurrentPage] = useState(1);
+            const [selectedAppointments, setSelectedAppointments] = useState([]);
+            const [notifications, setNotifications] = useState([]);
+
+            // Calculate total pages
+            const totalPages = Math.ceil(appointments.length / itemsPerPage);
+
+            useEffect(() => {
+                // Fetch notifications
+                const fetchNotifications = async () => {
+                    try {
+                        const response = await fetch('/api/notifications/');
+                        const data = await response.json();
+                        setNotifications(data);
+                    } catch (error) {
+                        console.error('Error fetching notifications:', error);
+                    }
+                };
+
+                fetchNotifications();
+
+                // WebSocket connection for real-time notifications
+                const ws = new WebSocket(`ws://${window.location.host}/ws/notifications/`);
+                ws.onmessage = (event) => {
+                    const newNotification = JSON.parse(event.data);
+                    setNotifications((prev) => [newNotification, ...prev]);
+                };
+
+                return () => ws.close();
+            }, []);
+
+            // Get appointments for the current page
+            const currentAppointments = appointments.slice(
+                (currentPage - 1) * itemsPerPage,
+                currentPage * itemsPerPage
+            );
+
+            // Handlers for pagination
+            const handlePrevious = () => {
+                if (currentPage > 1) {
+                    setCurrentPage(currentPage - 1);
+                }
+            };
+
+            const handleNext = () => {
+                if (currentPage < totalPages) {
+                    setCurrentPage(currentPage + 1);
+                }
+            };
+
+            const handleCheckboxChange = (id) => {
+                setSelectedAppointments((prevSelected) =>
+                    prevSelected.includes(id)
+                        ? prevSelected.filter((appointmentId) => appointmentId !== id)
+                        : [...prevSelected, id]
+                );
+            };
+
+            const handleHelpWalk = () => {
+                if (selectedAppointments.length === 0) {
+                    alert("Please select at least one appointment to help.");
+                    return;
+                }
+
+                fetch("/update_appointment_status/", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": csrfToken,
+                    },
+                    body: JSON.stringify({ appointments: selectedAppointments }),
+                })
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if (data.success) {
+                            alert("Appointments successfully updated to Inprogress!");
+                            window.location.reload();
+                        } else {
+                            alert("An error occurred while updating appointments.");
+                        }
+                    })
+                    .catch((error) => console.error("Error:", error));
+            };
+
+            return (
+                <div className="help-walk-container">
+                    <Header notifications={notifications} />
+                    <main className="help-walk-main">
+                        <h2>Help Other's Walk</h2>
+                        <div className="walks-list">
+                            {currentAppointments.map((appointment) => (
+                                <div key={appointment.id} className="walk-item">
+                                    <p><strong>Date:</strong> {appointment.date}</p>
+                                    <p><strong>Time:</strong> {appointment.time}</p>
+                                    <p><strong>Location:</strong> {appointment.location}</p>
+                                    <p><strong>Dog Type:</strong> {appointment.dog_type}</p>
+                                    <p><strong>Dog Size:</strong> {appointment.dog_size}</p>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedAppointments.includes(appointment.id)}
+                                        onChange={() => handleCheckboxChange(appointment.id)}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="pagination-controls">
+                            <button
+                                onClick={handlePrevious}
+                                disabled={currentPage === 1}
+                                className="pagination-button"
+                            >
+                                ◀
+                            </button>
+                            <span>
+                                {`${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(
+                                    currentPage * itemsPerPage,
+                                    appointments.length
+                                )} of ${appointments.length}`}
+                            </span>
+                            <button
+                                onClick={handleNext}
+                                disabled={currentPage === totalPages}
+                                className="pagination-button"
+                            >
+                                ▶
+                            </button>
+                        </div>
+                        <button className="help-walk-button" onClick={handleHelpWalk}>
+                            Help Walk
+                        </button>
+                    </main>
+                </div>
+            );
+        }
+        {% endverbatim %}
+
+        ReactDOM.render(<HelpWalk />, document.getElementById('help-walk-root'));
+    </script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Dog Walker Paradise</title>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <img src="{% static 'images/woman_dog1.webp' %}" alt="Description" class="login-image">
+    <div id="register-root"></div>
+    
+    <script>
+        const REGISTER_URL = "{% url 'register' %}";
+        const LOGIN_URL = "{% url 'login' %}";
+        const CSRF_TOKEN = "{{ csrf_token }}";
+        const MESSAGES = [
+            {% for message in messages %}
+                {
+                    text: "{{ message }}",
+                    tags: "{{ message.tags }}"
+                },
+            {% endfor %}
+        ];
+    </script>
+    
+    <script type="text/babel">
+        function RegisterForm() {
+            return (
+                <div className="container">
+                    <div className="form-container">
+                        <h2>Please Fill Out Form to Register!</h2>
+                        
+                        {MESSAGES.length > 0 && (
+                            <div className="messages">
+                                {MESSAGES.map((msg, index) => (
+                                    <div key={index} className={`message ${msg.tags}`}>
+                                        {msg.text}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        
+                        <form action={REGISTER_URL} method="POST">
+                            <input type="hidden" name="csrfmiddlewaretoken" value={CSRF_TOKEN} />
+                            
+                            <label>First Name:</label>
+                            <input type="text" name="firstname" required />
+                            
+                            <label>Last Name:</label>
+                            <input type="text" name="lastname" required />
+                            
+                            <label>Username:</label>
+                            <input type="text" name="username" required />
+                            
+                            <label>Email:</label>
+                            <input type="email" name="email" required />
+                            
+                            <label>Password:</label>
+                            <input type="password" name="password" required />
+                            
+                            <label>Confirm Password:</label>
+                            <input type="password" name="confirm_password" required />
+                            
+                            <button type="submit">Register</button>
+                        </form>
+                        <p>Already have an account? <a href={LOGIN_URL}>Login</a></p>
+                    </div>
+                </div>
+            );
+        }
+        
+        ReactDOM.render(<RegisterForm />, document.getElementById('register-root'));
+    </script>
+</body>
+</html>
